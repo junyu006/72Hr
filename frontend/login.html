@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sign in · Nightingale</title>
+  <link rel="stylesheet" href="login.css">
+</head>
+<body>
+  <main class="login-shell">
+    <section class="welcome">
+      <div class="brand"><i>N</i> Nightingale</div>
+      <p class="eyebrow">SHARED CARE NOTE</p>
+      <h1>One clinical timeline.<br>Precisely scoped access.</h1>
+      <p class="intro">Sign in to the local demonstration workspace. Every API request is authorized from your server-side session and PostgreSQL role scope.</p>
+      <div class="trust"><span>✓</span><div><b>Server-verified identity</b><small>Passwords are hashed. Session tokens stay in HttpOnly cookies.</small></div></div>
+    </section>
+    <section class="login-card">
+      <header><p class="eyebrow">WELCOME BACK</p><h2>Sign in to Nightingale</h2><p>Use one of the local synthetic demo accounts below.</p></header>
+      <form id="loginForm">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" required autofocus>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <p id="loginError" role="alert"></p>
+        <button id="signIn" type="submit">Sign in</button>
+      </form>
+      <div class="demo-heading"><span>LOCAL DEMO ACCOUNTS</span><small>Click to fill credentials</small></div>
+      <div class="demo-accounts">
+        <button data-user="patient_demo" data-password="Patient123!"><b>Patient</b><code>patient_demo</code></button>
+        <button data-user="staff_demo" data-password="Staff1234!"><b>Staff</b><code>staff_demo</code></button>
+        <button data-user="doctor_demo" data-password="Doctor123!"><b>Doctor</b><code>doctor_demo</code></button>
+        <button data-user="nurse_demo" data-password="Nurse1234!"><b>Nurse</b><code>nurse_demo</code></button>
+        <button data-user="admin_demo" data-password="Admin1234!"><b>Admin</b><code>admin_demo</code></button>
+        <button data-user="system_demo" data-password="System123!"><b>System</b><code>system_demo</code></button>
+      </div>
+      <p class="warning">Synthetic local accounts only. Change or remove these credentials before any deployment.</p>
+    </section>
+  </main>
+  <script src="login.js"></script>
+</body>
+</html>

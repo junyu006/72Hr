@@ -1,0 +1,10 @@
+name: Nightingale
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
+  - psycopg=3.3
+  - transformers
+  - pytorch
+  - huggingface_hub
+  - accelerate

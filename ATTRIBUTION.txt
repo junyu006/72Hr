@@ -1,0 +1,8 @@
+Nightingale prototype
+
+This initial framework uses only the Python 3 standard library.
+No external libraries, models, assets, or datasets are included.
+
+Model integration (optional, local inference):
+- Qwen/Qwen2.5-0.5B-Instruct — Apache License 2.0.
+- transformers, PyTorch, huggingface_hub — used to download and run the model.

@@ -1,0 +1,29 @@
+Nightingale Local Demo Accounts
+===============================
+
+These accounts are for the local synthetic-data demonstration only.
+Do not reuse these passwords or deploy them to a production environment.
+
+Patient
+Username: patient_demo
+Password: Patient123!
+
+Staff
+Username: staff_demo
+Password: Staff1234!
+
+Doctor
+Username: doctor_demo
+Password: Doctor123!
+
+Nurse
+Username: nurse_demo
+Password: Nurse1234!
+
+Admin
+Username: admin_demo
+Password: Admin1234!
+
+System
+Username: system_demo
+Password: System123!
