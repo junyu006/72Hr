@@ -39,7 +39,7 @@ Keep active entries at full fidelity. At 12 months, generate a clinician-reviewa
 
 ## Security, privacy and latency
 
-All example data is synthetic. Before any LLM boundary, `redact_for_llm()` masks basic names, Singapore IC-like IDs and phone patterns; production should use a validated DLP service plus encrypted object storage. TLS is required in transit; PostgreSQL storage/backup encryption is required at rest.
+All example data is synthetic. Before any LLM boundary, `redact_for_llm()` applies a local Phileas policy for built-in PII plus Singapore NRIC/FIN, telephone, and honorific-name patterns, and fails closed if it cannot redact. Production should additionally use a validated DLP service plus encrypted object storage. TLS is required in transit; PostgreSQL storage/backup encryption is required at rest.
 
 The warm Glance path uses one indexed patient query and precomputed/invalidated score projection after writes. `demo.py` measures the local in-memory scoring path; production acceptance instrumentation should report p95 query-plus-projection latency and maintain ≤300ms.
 

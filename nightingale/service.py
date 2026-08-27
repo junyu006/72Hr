@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime
 
 from .domain import Actor, AuditEvent, Comment, Entry, Highlight, Role, Version, new_id
 from .clinical import AI_HIGHLIGHT_TYPES, AI_SCRIBE_LOG, can_edit_entry, validate_entry_create
+from .redaction import redact_for_llm
 
 
 class PermissionDenied(Exception):
@@ -146,10 +146,3 @@ class CareService:
         for tag in entry.tags:
             self.feedback_weights[tag] += 1 if accepted else -1
         self.highlights[highlight_id] = Highlight(**{**h.__dict__, "accepted": accepted})
-
-
-def redact_for_llm(text: str) -> str:
-    """Redact basic PHI patterns before an LLM boundary; production uses a validated DLP service too."""
-    text = re.sub(r"\b\d{6}-?\d{2}-?\d{4}\b", "[REDACTED_ID]", text)
-    text = re.sub(r"\b(?:\+65[ -]?)?\d{4}[ -]?\d{4}\b", "[REDACTED_PHONE]", text)
-    return re.sub(r"\b(?:Mr|Ms|Mrs|Dr)\.?\s+[A-Z][a-z]+\b", "[REDACTED_NAME]", text)

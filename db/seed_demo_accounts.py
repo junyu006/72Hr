@@ -18,7 +18,9 @@ ACCOUNTS = (
 
 
 def main() -> None:
-    database_url = os.environ.get("DATABASE_OWNER_URL", "postgresql://zhangjunyu@127.0.0.1:5432/nightingale")
+    database_url = os.environ.get("DATABASE_OWNER_URL")
+    if not database_url:
+        raise SystemExit("DATABASE_OWNER_URL is required; follow README.md Quick Start.")
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
             for user_id, username, password, role, clinic_id, clinician_kind, patient_id in ACCOUNTS:

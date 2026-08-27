@@ -331,7 +331,7 @@ renderTimeline = function () {
 
 
 def main():
-    os.environ.setdefault("DATABASE_URL", "postgresql://nightingale_app@127.0.0.1:5432/nightingale")
+    os.environ.setdefault("DATABASE_URL", "postgresql://nightingale_app:nightingale_local@127.0.0.1:5432/nightingale")
     port = int(os.environ.get("PORT", "8000"))
     server = ThreadingHTTPServer(("127.0.0.1", port), App)
     print(f"Nightingale running at http://127.0.0.1:{port}")

@@ -1,8 +1,16 @@
 Nightingale prototype
 
-This initial framework uses only the Python 3 standard library.
-No external libraries, models, assets, or datasets are included.
+This framework includes the following third-party software and model assets.
 
 Model integration (optional, local inference):
-- Qwen/Qwen2.5-0.5B-Instruct — Apache License 2.0.
+- Qwen/Qwen2.5-0.5B-Instruct — Qwen Team / Alibaba Cloud, Apache License 2.0.
+  Model card: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct
+  Citation: Qwen Team, "Qwen2.5: A Party of Foundation Models" (2024),
+  https://qwenlm.github.io/blog/qwen2.5/
+  Used locally to generate AI-scribe summaries and clinician Glance View drafts.
 - transformers, PyTorch, huggingface_hub — used to download and run the model.
+
+PHI redaction:
+- Phileas Redact (philterd/phileas-python) — Apache License 2.0.
+  Source: https://github.com/philterd/phileas-python
+  Used for policy-based PHI detection and redaction before local LLM inference.
