@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from typing import Iterator
@@ -9,6 +10,9 @@ from typing import Iterator
 from .domain import Actor, Role, new_id
 from .clinical import AI_HIGHLIGHT_TYPES, can_edit_entry, validate_entry_create
 from .auth import new_session_token, token_digest, verify_password
+
+
+MENTION_PATTERN = re.compile(r"(?<![\w@])@([A-Za-z0-9][A-Za-z0-9_.-]{0,63})")
 
 
 class PostgresStore:
@@ -123,7 +127,29 @@ class PostgresStore:
 
     def comments(self, actor: Actor, entry_id: str) -> list[dict]:
         with self.request(actor) as cur:
-            cur.execute("SELECT id, author_id, author_role, body, mention_user_id, assigned_to, resolved, created_at FROM comments WHERE entry_id=%s ORDER BY created_at", (entry_id,))
+            cur.execute("""SELECT c.id,c.author_id,c.author_role,c.body,c.mention_user_id,
+                c.assigned_to,c.resolved,c.created_at,
+                COALESCE((SELECT array_agg(u.username ORDER BY u.username)
+                  FROM comment_mentions cm JOIN app_users u ON u.id=cm.mentioned_user_id
+                  WHERE cm.comment_id=c.id), ARRAY[]::text[]) AS mention_usernames
+                FROM comments c WHERE c.entry_id=%s ORDER BY c.created_at""", (entry_id,))
+            return self._rows(cur)
+
+    def mentionable_users(self, actor: Actor, entry_id: str) -> list[dict]:
+        """People in the same clinic who can read comments on this entry."""
+        if actor.role == Role.PATIENT:
+            return []
+        with self.request(actor) as cur:
+            cur.execute("SELECT entry_type FROM care_entries WHERE id=%s", (entry_id,))
+            entry = cur.fetchone()
+            if not entry:
+                raise PermissionError("entry is unavailable")
+            cur.execute("""SELECT u.id,u.username,u.role::text,u.clinician_kind
+                FROM app_users u
+                WHERE u.active AND u.clinic_id=%s AND u.id<>%s
+                  AND (u.role IN ('clinician','admin')
+                    OR (u.role='staff' AND %s='staff_manual_log'))
+                ORDER BY u.username""", (actor.clinic_id, actor.id, entry[0]))
             return self._rows(cur)
 
     def highlights(self, actor: Actor, patient_id: str) -> list[dict]:
@@ -183,9 +209,65 @@ class PostgresStore:
         return results
 
     def add_comment(self, actor: Actor, entry_id: str, body: str, mention: str | None = None) -> dict:
+        body = body.strip()
+        if not body:
+            raise ValueError("comment body is required")
+        usernames = set(MENTION_PATTERN.findall(body))
+        if mention:
+            usernames.add(mention.lstrip("@"))
         with self.request(actor) as cur:
-            cur.execute("INSERT INTO comments(id,entry_id,author_id,author_role,body,mention_user_id) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id,author_id,author_role,body,mention_user_id,created_at", (new_id('comment'), entry_id, actor.id, actor.role.value, body, mention))
-            return dict(zip([d.name for d in cur.description], cur.fetchone()))
+            cur.execute("SELECT entry_type FROM care_entries WHERE id=%s", (entry_id,))
+            entry = cur.fetchone()
+            if not entry or actor.role == Role.PATIENT:
+                raise PermissionError("comments are unavailable")
+            mentioned_users = []
+            if usernames:
+                cur.execute("""SELECT id,username,role::text FROM app_users
+                    WHERE active AND clinic_id=%s AND username=ANY(%s)
+                      AND id<>%s
+                      AND (role IN ('clinician','admin') OR (role='staff' AND %s='staff_manual_log'))
+                    ORDER BY username""", (actor.clinic_id, list(usernames), actor.id, entry[0]))
+                mentioned_users = cur.fetchall()
+                found = {row[1] for row in mentioned_users}
+                unavailable = sorted(usernames - found)
+                if unavailable:
+                    raise PermissionError(f"mention unavailable for this entry: {', '.join(unavailable)}")
+            comment_id = new_id('comment')
+            legacy_mention = mentioned_users[0][0] if mentioned_users else None
+            cur.execute("""INSERT INTO comments(id,entry_id,author_id,author_role,body,mention_user_id)
+                VALUES (%s,%s,%s,%s,%s,%s)
+                RETURNING id,author_id,author_role,body,mention_user_id,created_at""",
+                (comment_id, entry_id, actor.id, actor.role.value, body, legacy_mention))
+            result = dict(zip([d.name for d in cur.description], cur.fetchone()))
+            for user_id, _username, _role in mentioned_users:
+                cur.execute("""INSERT INTO comment_mentions(comment_id,mentioned_user_id,clinic_id)
+                    VALUES (%s,%s,%s)""", (comment_id, user_id, actor.clinic_id))
+            result["mention_usernames"] = [row[1] for row in mentioned_users]
+            return result
+
+    def notifications(self, actor: Actor) -> list[dict]:
+        with self.request(actor) as cur:
+            cur.execute("""SELECT cm.comment_id AS notification_id,cm.read_at,cm.created_at,
+                c.body,c.author_id,COALESCE(author.username,c.author_id) AS author_username,
+                e.id AS entry_id,e.patient_id,e.entry_type,p.display_label AS patient_label
+                FROM comment_mentions cm
+                JOIN comments c ON c.id=cm.comment_id
+                JOIN care_entries e ON e.id=c.entry_id
+                JOIN patients p ON p.id=e.patient_id
+                LEFT JOIN app_users author ON author.id=c.author_id
+                WHERE cm.mentioned_user_id=%s
+                ORDER BY (cm.read_at IS NULL) DESC,cm.created_at DESC""", (actor.id,))
+            return self._rows(cur)
+
+    def mark_notification_read(self, actor: Actor, notification_id: str) -> dict:
+        with self.request(actor) as cur:
+            cur.execute("""UPDATE comment_mentions SET read_at=COALESCE(read_at,now())
+                WHERE comment_id=%s AND mentioned_user_id=%s
+                RETURNING comment_id AS notification_id,read_at""", (notification_id, actor.id))
+            row = cur.fetchone()
+            if not row:
+                raise PermissionError("notification is unavailable")
+            return dict(zip([d.name for d in cur.description], row))
 
     def versions(self, actor: Actor, entry_id: str) -> list[dict]:
         with self.request(actor) as cur:

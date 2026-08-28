@@ -9,6 +9,10 @@ class RbacScopeTests(unittest.TestCase):
         service, a = setup_service()
         staff_note = service.create_entry(a["staff"], patient_id="p1", section="staff_notes", content="call patient", entry_type="staff_manual_log")
         clinician_note = service.create_entry(a["clinician"], patient_id="p1", section="clinician_sections", content="plan", entry_type="clinician_manual_log")
+        with self.assertRaises(PermissionDenied):
+            service.create_entry(a["staff"], patient_id="p1", section="clinician_sections", content="wrong", entry_type="clinician_manual_log")
+        with self.assertRaises(PermissionDenied):
+            service.create_entry(a["clinician"], patient_id="p1", section="staff_notes", content="wrong", entry_type="staff_manual_log")
         with self.assertRaises(PermissionDenied): service.edit(a["clinician"], staff_note.id, "changed")
         with self.assertRaises(PermissionDenied): service.edit(a["staff"], clinician_note.id, "changed")
         with self.assertRaises(PermissionDenied): service.timeline(a["other_staff"], "p1")
@@ -18,5 +22,7 @@ class RbacScopeTests(unittest.TestCase):
         service.create_entry(a["staff"], patient_id="p1", section="staff_notes", content="internal", entry_type="staff_manual_log")
         ai = service.ingest_ai_scribe(a["system"], patient_id="p1", content="raw scribe", ai_type="ai_patient_session_summary", session_id="s1")
         service.create_entry(a["clinician"], patient_id="p1", section="patient_facing", content="take rest", entry_type="patient_facing_log")
-        self.assertEqual([e.content for e in service.timeline(a["patient"], "p1")], ["take rest"])
+        patient_timeline = service.timeline(a["patient"], "p1")
+        self.assertEqual([e.content for e in patient_timeline], ["take rest"])
+        self.assertNotIn(ai.id, {entry.id for entry in patient_timeline})
         with self.assertRaises(PermissionDenied): service.add_comment(a["patient"], ai.id, "nope")

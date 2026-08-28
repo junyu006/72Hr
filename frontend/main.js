@@ -1,5 +1,6 @@
 const $ = selector => document.querySelector(selector);
 const state = {patient:null, entries:[], highlights:[], filter:'all', autoGlance:true, selectedHighlightId:null, pendingHighlightId:null, user:null};
+const deepLink = new URLSearchParams(location.search);
 const role = $('#role');
 const toast = $('#toast');
 const clinicalKind = document.createElement('select');
@@ -68,7 +69,10 @@ async function loadPatients() {
     `<button class="patient-row ${state.patient?.id===patient.id?'current':''}" data-id="${esc(patient.id)}" data-name="${esc(patient.display_label)}">${esc(patient.display_label)}</button>`
   ).join('') : '<p class="small-note">No patients available for this role.</p>';
   document.querySelectorAll('.patient-row').forEach(button => button.onclick=()=>selectPatient({id:button.dataset.id,display_label:button.dataset.name}));
-  if (!state.patient && patients[0]) await selectPatient(patients[0]);
+  if (!state.patient && patients[0]) {
+    const requested=patients.find(patient=>patient.id===deepLink.get('patient'));
+    await selectPatient(requested||patients[0]);
+  }
   if (!patients.length) clearPatient();
 }
 function clearPatient() {
@@ -90,6 +94,12 @@ async function selectPatient(patient) {
     state.autoGlance=false;
     generateGlance();
   }
+  const linkedEntry=deepLink.get('entry');
+  if(linkedEntry&&deepLink.get('patient')===patient.id&&state.entries.some(entry=>entry.id===linkedEntry)){
+    state.filter='all';renderTimeline();jumpTo(linkedEntry);
+    if(deepLink.get('comment'))await showComments(linkedEntry);
+    history.replaceState(null,'','/app.html');
+  }
 }
 async function loadTimeline() {
   if (!state.patient) return;
@@ -106,9 +116,13 @@ function renderGlance() {
     return {...highlight,keyword:entry.content.slice(Number(highlight.span_start),Number(highlight.span_end))};
   }).filter(Boolean);
   const attention=rows.map(entry=>`<div><small>${entry.open_action?'Open action':'Risk'} · ${esc(recordLabels[entry.entry_type]||entry.entry_type)}</small><strong>${esc(entry.content.slice(0,48))}</strong><button class="jump" data-id="${entry.id}">View source →</button></div>`).join('');
-  const highlights=highlighted.length ? highlighted.map(highlight=>`<article class="glance-highlight ${state.selectedHighlightId===highlight.id?'selected':''}" data-highlight-id="${esc(highlight.id)}"><button class="highlight-select" data-id="${esc(highlight.id)}" aria-pressed="${state.selectedHighlightId===highlight.id}"><mark>${esc(highlight.keyword)}</mark><span>${esc(highlight.risk_reason)}</span><code>${esc(highlight.origin)} highlight</code></button><button class="highlight-jump" data-id="${esc(highlight.entry_id)}" data-highlight-id="${esc(highlight.id)}">View entry: ${esc(highlight.entry_id)} →</button></article>`).join('') : '<p class="small-note">No highlighted keywords in the records visible to this role.</p>';
-  const deleteControl=canManageHighlights()?`<button class="delete-selected-highlight" ${state.selectedHighlightId?'':'disabled'}>Delete selected highlight</button>`:'';
-  $('#glanceRows').innerHTML=`<div class="facts glance-facts">${attention||'<div><small>Open actions & risks</small><strong>Nothing currently flagged.</strong></div>'}<div class="highlight-column"><div class="highlight-column-header"><small>Highlighted keywords</small><b>${highlighted.length}</b></div><div class="highlight-list">${highlights}</div>${deleteControl}</div></div>`;
+  const highlights=highlighted.length ? highlighted.map(highlight=>{
+    const shortId=highlight.entry_id.replace(/^entry_/,'').slice(-8);
+    const selected=state.selectedHighlightId===highlight.id;
+    return `<article class="glance-highlight ${selected?'selected':''}" data-highlight-id="${esc(highlight.id)}"><button class="highlight-select" data-id="${esc(highlight.id)}" aria-pressed="${selected}"><span class="highlight-keyword-row"><mark>${esc(highlight.keyword)}</mark><i aria-hidden="true">${selected?'✓':'○'}</i></span><span class="highlight-reason">${esc(highlight.risk_reason)}</span></button><div class="highlight-card-footer"><span class="highlight-origin">${esc(highlight.origin)} highlight</span><button class="highlight-jump" data-id="${esc(highlight.entry_id)}" data-highlight-id="${esc(highlight.id)}" title="View ${esc(highlight.entry_id)}"><span>Source</span><code>…${esc(shortId)}</code><span aria-hidden="true">→</span></button></div></article>`;
+  }).join('') : '<p class="highlight-empty">No highlighted keywords in the records visible to this role.</p>';
+  const deleteControl=canManageHighlights()?`<button class="delete-selected-highlight" ${state.selectedHighlightId?'':'disabled'} aria-label="Delete selected highlight">Delete selected</button>`:'';
+  $('#glanceRows').innerHTML=`<div class="facts glance-facts">${attention||'<div><small>Open actions & risks</small><strong>Nothing currently flagged.</strong></div>'}<div class="highlight-column"><div class="highlight-column-header"><span><small>Highlighted keywords</small><b>${highlighted.length}</b></span>${deleteControl}</div><div class="highlight-list">${highlights}</div></div></div>`;
   document.querySelectorAll('.jump').forEach(button=>button.onclick=()=>jumpTo(button.dataset.id));
   document.querySelectorAll('.highlight-select').forEach(button=>button.onclick=()=>selectHighlight(button.dataset.id));
   document.querySelectorAll('.highlight-jump').forEach(button=>button.onclick=()=>{selectHighlight(button.dataset.highlightId);jumpTo(button.dataset.id);});
@@ -143,7 +157,10 @@ function renderTimeline() {
   $('#timeline').innerHTML=entries.length ? entries.map(entry=>{
     const editable=canEdit(entry);
     const internalActions=role.value!=='patient';
-    return `<article id="entry-${esc(entry.id)}"><span class="dot blue"></span><div class="meta"><span class="system">${entry.author_role==='system'?'✦ AI':esc(entry.author_id.slice(0,2))}</span><b>${esc(entry.author_id)}</b><small>${esc(recordLabels[entry.entry_type]||entry.entry_type)}</small><time>${new Date(entry.created_at).toLocaleString('en-US')}</time><mark>Entry ID: ${esc(entry.id)}<br>v${entry.version}</mark></div><div class="text ${editable?'editable':''}" ${editable?'contenteditable="true"':''}>${esc(entry.content)}</div><div class="actions">${editable?`<button class="save" data-id="${entry.id}" data-v="${entry.version}">Save edit</button>`:''}${internalActions?`<button class="comments-btn" data-id="${entry.id}">Comments</button><button class="versions" data-id="${entry.id}">Versions</button>`:''}${canHighlight(entry)?`<button class="manual-highlight" data-id="${entry.id}">Highlight keyword</button>`:''}</div><div class="comments" id="comments-${entry.id}"></div><div class="history" id="history-${entry.id}"></div></article>`;
+    const editControl=editable
+      ? `<span class="edit-state editable-state">Editable</span><button class="save" data-id="${entry.id}" data-v="${entry.version}">Save new version</button>`
+      : `<span class="edit-state readonly-state" title="Your role cannot edit this record type">View only</span>`;
+    return `<article id="entry-${esc(entry.id)}"><span class="dot blue"></span><div class="meta"><span class="system">${entry.author_role==='system'?'✦ AI':esc(entry.author_id.slice(0,2))}</span><b>${esc(entry.author_id)}</b><small>${esc(recordLabels[entry.entry_type]||entry.entry_type)}</small><time>${new Date(entry.created_at).toLocaleString('en-US')}</time><mark>Entry ID: ${esc(entry.id)}<br>v${entry.version}</mark></div><div class="text ${editable?'editable':''}" ${editable?'contenteditable="true" role="textbox" aria-multiline="true" aria-label="Editable record content" spellcheck="true"':''}>${esc(entry.content)}</div><div class="actions">${editControl}${internalActions?`<button class="comments-btn" data-id="${entry.id}">Comments</button><button class="versions" data-id="${entry.id}" aria-expanded="false">Versions</button>`:''}${canHighlight(entry)?`<button class="manual-highlight" data-id="${entry.id}">Highlight keyword</button>`:''}</div><div class="comments" id="comments-${entry.id}"></div><div class="history" id="history-${entry.id}"></div></article>`;
   }).join('') : '<div class="empty">No records available in this view.</div>';
   applyHighlights(); attachTimelineActions();
 }
@@ -177,7 +194,12 @@ function attachTimelineActions() {
     }
   });
   document.querySelectorAll('.save').forEach(button=>button.onclick=async()=>{
-    try { const content=document.querySelector(`#entry-${CSS.escape(button.dataset.id)} .text`).textContent; await api(`/api/entries/${button.dataset.id}`,{method:'PATCH',body:JSON.stringify({content,expected_version:Number(button.dataset.v)})}); await loadTimeline(); say('New version saved.'); } catch(error){ say(error.message); }
+    try {
+      const entry=state.entries.find(item=>item.id===button.dataset.id), content=document.querySelector(`#entry-${CSS.escape(button.dataset.id)} .text`).textContent;
+      if(content===entry?.content)return say('No changes to save.');
+      await api(`/api/entries/${button.dataset.id}`,{method:'PATCH',body:JSON.stringify({content,expected_version:Number(button.dataset.v)})});
+      await loadTimeline();say('New version saved.');
+    } catch(error){ say(error.message); }
   });
   document.querySelectorAll('.comments-btn').forEach(button=>button.onclick=()=>showComments(button.dataset.id));
   document.querySelectorAll('.versions').forEach(button=>button.onclick=()=>showVersions(button.dataset.id));
@@ -185,16 +207,34 @@ function attachTimelineActions() {
 }
 async function showComments(entryId) {
   try {
-    const comments=await api(`/api/entries/${entryId}/comments`), holder=$(`#comments-${CSS.escape(entryId)}`);
-    holder.innerHTML=`${comments.map(comment=>`<p><b>${esc(comment.author_id)}</b> ${esc(comment.body)}</p>`).join('')}<button class="add-comment">Add comment</button>`;
-    holder.querySelector('.add-comment').onclick=async()=>{const body=prompt('Internal comment:'); if(!body)return; await api(`/api/entries/${entryId}/comments`,{method:'POST',body:JSON.stringify({body})}); showComments(entryId);};
+    const [comments,people]=await Promise.all([api(`/api/entries/${entryId}/comments`),api(`/api/mentionable-users?entry_id=${encodeURIComponent(entryId)}`)]),holder=$(`#comments-${CSS.escape(entryId)}`);
+    const formatBody=comment=>{
+      let body=esc(comment.body);
+      (comment.mention_usernames||[]).sort((a,b)=>b.length-a.length).forEach(username=>{body=body.replaceAll(`@${esc(username)}`,`<mark>@${esc(username)}</mark>`);});
+      return body;
+    };
+    holder.innerHTML=`<div class="comment-list">${comments.map(comment=>`<p class="comment-row"><b>${esc(comment.author_id)}</b> ${formatBody(comment)}</p>`).join('')||'<p class="small-note">No comments yet.</p>'}</div><div class="mention-options">${people.map(person=>`<button type="button" class="mention-chip" data-username="${esc(person.username)}">@${esc(person.username)} <small>${esc(person.clinician_kind||person.role)}</small></button>`).join('')}</div><div class="composer"><input class="comment-input" maxlength="1000" placeholder="Add an internal comment; type @username to notify…"><button class="post-comment">Post</button></div>`;
+    holder.classList.add('open');
+    const input=holder.querySelector('.comment-input');
+    holder.querySelectorAll('.mention-chip').forEach(button=>button.onclick=()=>{const token=`@${button.dataset.username} `;if(!input.value.includes(token.trim()))input.value+=`${input.value&&!input.value.endsWith(' ')?' ':''}${token}`;input.focus();});
+    holder.querySelector('.post-comment').onclick=async()=>{const body=input.value.trim();if(!body)return;try{await api(`/api/entries/${entryId}/comments`,{method:'POST',body:JSON.stringify({body})});await showComments(entryId);say('Comment posted and mentions notified.');}catch(error){say(error.message);}};
   } catch(error){say(error.message);}
+}
+
+async function refreshNotificationBadge(){
+  const notifications=await api('/api/notifications');
+  const unread=notifications.filter(notification=>!notification.read_at).length,badge=$('#notificationBadge');
+  badge.textContent=unread;badge.hidden=unread===0;
 }
 async function showVersions(entryId) {
   try {
     const versions=await api(`/api/entries/${entryId}/versions`), holder=$(`#history-${CSS.escape(entryId)}`), entry=state.entries.find(item=>item.id===entryId);
-    holder.innerHTML=versions.map(version=>`<div><b>v${version.version}</b> by ${esc(version.changed_by)} · ${esc(version.change_reason)}${canEdit(entry)?` <button class="revert" data-v="${version.version}">Restore</button>`:''}<p>${esc(version.content)}</p></div>`).join('');
-    holder.querySelectorAll('.revert').forEach(button=>button.onclick=async()=>{await api(`/api/entries/${entryId}/revert`,{method:'POST',body:JSON.stringify({version:Number(button.dataset.v)})}); await loadTimeline(); say('Version restored as a new revision.');});
+    const trigger=document.querySelector(`.versions[data-id="${CSS.escape(entryId)}"]`);
+    if(holder.classList.contains('open')){holder.classList.remove('open');trigger?.setAttribute('aria-expanded','false');return;}
+    holder.innerHTML=`<div class="history-heading"><span><b>Version history</b><small>${versions.length} revision${versions.length===1?'':'s'}</small></span><button class="close-history" type="button">Close</button></div>${versions.map(version=>`<section class="version-card"><div class="version-meta"><b>v${version.version}</b><span>${esc(version.change_reason)}</span><time>${new Date(version.changed_at).toLocaleString('en-US')}</time>${canEdit(entry)?`<button class="revert" data-v="${version.version}">Restore this version</button>`:'<em>Read only</em>'}</div><small>Changed by ${esc(version.changed_by)}</small><p>${esc(version.content)}</p></section>`).join('')||'<p class="small-note">No versions are available.</p>'}`;
+    holder.classList.add('open');trigger?.setAttribute('aria-expanded','true');
+    holder.querySelector('.close-history')?.addEventListener('click',()=>{holder.classList.remove('open');trigger?.setAttribute('aria-expanded','false');});
+    holder.querySelectorAll('.revert').forEach(button=>button.onclick=async()=>{try{await api(`/api/entries/${entryId}/revert`,{method:'POST',body:JSON.stringify({version:Number(button.dataset.v)})});await loadTimeline();say('Version restored as a new revision.');}catch(error){say(error.message);}});
   } catch(error){say(error.message);}
 }
 async function createHighlight(entryId) {
@@ -230,5 +270,5 @@ $('#runScribe').onclick=async event=>{event.preventDefault();try{await api(`/api
 $('#aiGlance').onclick=generateGlance;
 $('#logout').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST',body:'{}'});}finally{location.replace('/login.html');}};
 document.querySelectorAll('.filters button').forEach(button=>button.onclick=()=>{document.querySelector('.filters .selected')?.classList.remove('selected');button.classList.add('selected');state.filter=button.dataset.filter;renderTimeline();});
-async function bootstrap(){state.user=await api('/api/auth/me');role.value=state.user.role;if(state.user.clinician_kind)clinicalKind.value=state.user.clinician_kind;$('#signedInUser').textContent=state.user.clinician_kind?`${state.user.username} · ${state.user.clinician_kind}`:state.user.username;$('.avatar').textContent=state.user.username.slice(0,2).toUpperCase();configureRole();await loadPatients();}
+async function bootstrap(){state.user=await api('/api/auth/me');role.value=state.user.role;if(state.user.clinician_kind)clinicalKind.value=state.user.clinician_kind;$('#signedInUser').textContent=state.user.clinician_kind?`${state.user.username} · ${state.user.clinician_kind}`:state.user.username;$('.avatar').textContent=state.user.username.slice(0,2).toUpperCase();configureRole();await Promise.all([loadPatients(),refreshNotificationBadge()]);}
 bootstrap().catch(error=>say(error.message));

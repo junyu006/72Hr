@@ -11,7 +11,7 @@ from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from time import perf_counter
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .domain import Actor, ClinicianKind, Role
 from .clinical import (
@@ -24,6 +24,7 @@ from .clinical import (
 )
 from .qwen import generate_glance, generate_scribe
 from .postgres import PostgresStore
+from .redaction import redact_glance_timeline
 from .service import redact_for_llm
 
 ROOT = Path(__file__).parent.parent / "frontend"
@@ -74,9 +75,9 @@ class App(SimpleHTTPRequestHandler):
                 user = self.current_user()
                 if not user: return self.fail("authentication required", 401)
                 return self.send_json({key: user[key] for key in ("id","username","role","clinic_id","clinician_kind","patient_id","expires_at")})
-            if path == "/app.html":
+            if path in {"/app.html", "/notifications.html"}:
                 if not self.current_user(): return self.redirect("/login.html")
-                content = (ROOT / "app.html").read_text(encoding="utf-8").replace("Llama 3.2", "Qwen2.5").replace("Built with Llama", "")
+                content = (ROOT / path.removeprefix("/")).read_text(encoding="utf-8").replace("Llama 3.2", "Qwen2.5").replace("Built with Llama", "")
                 encoded = content.encode("utf-8")
                 self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(encoded))); self.end_headers(); self.wfile.write(encoded)
                 return
@@ -217,6 +218,11 @@ renderTimeline = function () {
                 self.send_response(200); self.send_header("Content-Type", "application/javascript; charset=utf-8"); self.send_header("Content-Length", str(len(encoded))); self.end_headers(); self.wfile.write(encoded)
                 return
             if path == "/api/patients": return self.send_json(self.store().patients(self.actor()))
+            if path == "/api/notifications": return self.send_json(self.store().notifications(self.actor()))
+            if path == "/api/mentionable-users":
+                entry_id = parse_qs(urlparse(self.path).query).get("entry_id", [""])[0]
+                if not entry_id: return self.fail("entry_id is required", 400)
+                return self.send_json(self.store().mentionable_users(self.actor(), entry_id))
             m = re.fullmatch(r"/api/patients/([^/]+)/timeline", path)
             if m: return self.send_json(self.store().timeline(self.actor(), m.group(1)))
             m = re.fullmatch(r"/api/patients/([^/]+)/highlights", path)
@@ -285,9 +291,11 @@ renderTimeline = function () {
             m = re.fullmatch(r"/api/patients/([^/]+)/ai-glance", path)
             if m:
                 entries = store.timeline(actor, m.group(1))
-                source = "\n".join(f"[{e['id']}] {e['created_at']}: {e['content']}" for e in entries)
+                # PHI-filter each record first; append validated source IDs only
+                # afterward so redaction cannot erase Glance citations.
+                source = redact_glance_timeline(entries)
                 started_at = perf_counter()
-                summary = generate_glance(redact_for_llm(source))
+                summary = generate_glance(source)
                 generation_ms = round((perf_counter() - started_at) * 1000)
                 # `entries` is already RLS-filtered for this request. Never return
                 # a source link solely because the model mentioned its ID.
@@ -301,7 +309,15 @@ renderTimeline = function () {
         except AuthenticationError as exc: return self.fail(str(exc), 401)
         except Exception as exc: return self.fail(str(exc), 403)
     def do_PATCH(self):
-        m = re.fullmatch(r"/api/entries/([^/]+)", urlparse(self.path).path)
+        path = urlparse(self.path).path
+        notification = re.fullmatch(r"/api/notifications/([^/]+)", path)
+        if notification:
+            try:
+                return self.send_json(self.store().mark_notification_read(self.actor(), notification.group(1)))
+            except AuthenticationError as exc: return self.fail(str(exc), 401)
+            except PermissionError as exc: return self.fail(str(exc), 403)
+            except Exception as exc: return self.fail(str(exc), 409)
+        m = re.fullmatch(r"/api/entries/([^/]+)", path)
         if not m: return self.fail("not found", 404)
         try:
             data = self.body(); version = self.store().edit_with_version(self.actor(), m.group(1), data["content"], int(data["expected_version"]))

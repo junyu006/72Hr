@@ -1,17 +1,15 @@
 name: Nightingale
 channels:
-  - conda-forge
+  - defaults
 dependencies:
-  # Python 3.12 has prebuilt packages for both Windows and macOS.
-  - python=3.12
-  - psycopg=3.3
-  - transformers
-  - pytorch
-  - huggingface_hub
-  - accelerate
+  # Version families from the currently verified Nightingale Conda environment.
+  # Patch releases may differ between Windows x64 and Apple Silicon macOS.
+  - python>=3.14,<3.15
+  - psycopg>=3.3,<3.4
+  - pytorch>=2.13,<2.14
+  - transformers>=5.15,<5.16
+  - huggingface_hub>=1.15,<1.16
+  - accelerate>=1.13,<1.14
   - pip
   - pip:
-      # Phileas uses PhiSQL's policy-action catalog; both are installed from
-      # their official repositories until PhiSQL is published on PyPI.
-      - "git+https://github.com/philterd/phisql.git#subdirectory=reference/python"
-      - "git+https://github.com/philterd/phileas-python.git"
+      - phileas-redact==1.0.0

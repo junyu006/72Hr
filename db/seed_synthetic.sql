@@ -1,5 +1,10 @@
 -- English-only synthetic demonstration data. No real patient information.
-TRUNCATE audit_log, comments, entry_versions, highlights, care_entries, patient_accounts, patients, importance_feedback RESTART IDENTITY CASCADE;
+-- Reset transient authentication and notification state too, so every technical
+-- demo starts logged out and contains no mentions from an earlier run.
+TRUNCATE app_sessions, comment_mentions, audit_log, comments, entry_versions,
+  highlights, care_entries, patient_accounts, patients, importance_feedback,
+  app_users
+  RESTART IDENTITY CASCADE;
 
 INSERT INTO patients (id, clinic_id, display_label) VALUES
   ('patient_ava_synthetic', 'clinic_demo', 'Ava Morgan (Synthetic)'),

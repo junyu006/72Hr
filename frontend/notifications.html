@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Nightingale · Notifications</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="notifications.css">
+</head>
+<body class="notifications-page">
+  <header class="notifications-header">
+    <b><i>N</i> Nightingale</b>
+    <div><strong>Notifications</strong><small id="notificationUser">Loading account…</small></div>
+    <a href="/app.html">← Back to care timeline</a>
+    <button class="logout" id="logout">Sign out</button>
+  </header>
+  <main class="notifications-main">
+    <section class="notifications-title">
+      <div><label>MENTIONS</label><h1>Your notifications</h1><p>Open a notification to jump directly to the timeline entry and comment where you were mentioned.</p></div>
+      <button id="refreshNotifications">Refresh</button>
+    </section>
+    <div id="notificationSummary" class="notification-summary"></div>
+    <section id="notificationList" class="notification-list"><p class="empty">Loading notifications…</p></section>
+  </main>
+  <div class="toast" id="toast"></div>
+  <script src="notifications.js"></script>
+</body>
+</html>

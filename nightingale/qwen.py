@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
-
 MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct"
 
 
@@ -16,12 +15,10 @@ def _pipeline():
     try:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-        if torch.cuda.is_available():
-            device = 0
-        else:
-            device = -1
+        device = -1
         tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
         model = AutoModelForCausalLM.from_pretrained(MODEL_ID, device_map="auto")
+        print("tokenizer and model complete")
         return pipeline("text-generation", model=model, tokenizer=tokenizer, device=device)
     except Exception as exc:
         raise ModelUnavailable("Unable to load Qwen2.5-0.5B-Instruct. Check the local model cache and Transformers installation.") from exc

@@ -13,5 +13,8 @@ class RevisionHistoryTests(unittest.TestCase):
         self.assertEqual(reverted.content, "v1")
         self.assertEqual(reverted.version, 3)
         event = service.audit_log[-1]
+        self.assertEqual(event.action, "reverted")
         self.assertEqual(event.actor_id, a["clinician"].id)
+        self.assertEqual(event.metadata, {"from_version": 1, "to_version": 3})
+        self.assertNotIn("content", event.metadata)
         self.assertNotIn("v1", str(event.metadata))

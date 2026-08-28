@@ -6,8 +6,10 @@ Singapore phone numbers, and honourific-prefixed names.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from functools import lru_cache
+import re
 from uuid import uuid4
 
 try:
@@ -22,6 +24,9 @@ class PHIRedactionUnavailable(RuntimeError):
     """Raised when text cannot safely be redacted for the LLM boundary."""
 
 
+_ENTRY_ID_PATTERN = re.compile(r"entry_[0-9a-f]{8,32}")
+
+
 def _redact_strategy() -> list[dict[str, str]]:
     return [{"strategy": "REDACT", "redactionFormat": "[REDACTED-%t]"}]
 
@@ -29,6 +34,27 @@ def _redact_strategy() -> list[dict[str, str]]:
 def phileas_policy_definition() -> dict:
     """Return the Nightingale policy without placing any patient data in it."""
     strategy = _redact_strategy()
+    # Phileas 1.0 calls custom regex entries ``patterns``; 1.1 renamed that
+    # section to ``identifiers`` and changed the strategy/classification keys.
+    # Supplying both schemas is safe (each release ignores the unknown one) and
+    # keeps the project compatible with the installed phileas-redact package.
+    legacy_patterns = [
+        {
+            "label": "singapore-nric-fin",
+            "pattern": r"(?i:\b[stfgm]\d{7}[a-z]\b)",
+            "patternFilterStrategies": deepcopy(strategy),
+        },
+        {
+            "label": "singapore-phone-number",
+            "pattern": r"(?<!\w)(?:\+65[ -]?)?[689]\d{3}[ -]?\d{4}\b",
+            "patternFilterStrategies": deepcopy(strategy),
+        },
+        {
+            "label": "honorific-name",
+            "pattern": r"\b(?:Mr|Ms|Mrs|Miss|Dr)\.?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b",
+            "patternFilterStrategies": deepcopy(strategy),
+        },
+    ]
     return {
         "name": "nightingale-llm-phi-redaction",
         "identifiers": {
@@ -40,21 +66,26 @@ def phileas_policy_definition() -> dict:
             "streetAddress": {"streetAddressFilterStrategies": deepcopy(strategy)},
             "date": {"dateFilterStrategies": deepcopy(strategy)},
             "age": {"ageFilterStrategies": deepcopy(strategy)},
-            "patterns": [
+            "patterns": legacy_patterns,
+            # Phileas calls custom regex detectors ``identifiers`` (distinct
+            # from the surrounding policy section) and expects this strategy
+            # field name.  Using a generic ``patterns`` key is silently ignored.
+            "identifiers": [
                 {
-                    "label": "singapore-nric-fin",
-                    "pattern": r"(?i:\b[stfgm]\d{7}[a-z]\b)",
-                    "patternFilterStrategies": deepcopy(strategy),
+                    "classification": "singapore-nric-fin",
+                    "pattern": r"\b[stfgm]\d{7}[a-z]\b",
+                    "caseSensitive": False,
+                    "identifierFilterStrategies": deepcopy(strategy),
                 },
                 {
-                    "label": "singapore-phone-number",
+                    "classification": "singapore-phone-number",
                     "pattern": r"(?<!\w)(?:\+65[ -]?)?[689]\d{3}[ -]?\d{4}\b",
-                    "patternFilterStrategies": deepcopy(strategy),
+                    "identifierFilterStrategies": deepcopy(strategy),
                 },
                 {
-                    "label": "honorific-name",
+                    "classification": "honorific-name",
                     "pattern": r"\b(?:Mr|Ms|Mrs|Miss|Dr)\.?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b",
-                    "patternFilterStrategies": deepcopy(strategy),
+                    "identifierFilterStrategies": deepcopy(strategy),
                 },
             ],
         },
@@ -97,3 +128,24 @@ def redact_for_llm(text: str) -> str:
         raise
     except Exception as exc:
         raise PHIRedactionUnavailable("PHI redaction failed; the AI request was blocked.") from exc
+
+
+def redact_glance_timeline(entries: Iterable[Mapping]) -> str:
+    """Redact timeline text before adding trusted source-entry metadata.
+
+    Entry IDs are validated application provenance, not clinical free text. They
+    are appended only after Phileas runs, so policy changes cannot remove the
+    citation Qwen needs to copy into its Glance output.
+    """
+    records: list[str] = []
+    for entry in entries:
+        entry_id = str(entry.get("id", ""))
+        if _ENTRY_ID_PATTERN.fullmatch(entry_id) is None:
+            raise PHIRedactionUnavailable(
+                "Invalid entry provenance ID; the AI request was blocked."
+            )
+        clinical_text = f"{entry.get('created_at', '')}: {entry.get('content', '')}"
+        records.append(
+            f"Source Entry ID: {entry_id}\n{redact_for_llm(clinical_text)}"
+        )
+    return "\n\n".join(records)
