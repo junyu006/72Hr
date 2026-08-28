@@ -14,3 +14,10 @@ PHI redaction:
 - Phileas Redact (philterd/phileas-python) — Apache License 2.0.
   Source: https://github.com/philterd/phileas-python
   Used for policy-based PHI detection and redaction before local LLM inference.
+
+Development assistance:
+- OpenAI Codex — AI coding agent used to assist with implementation,
+  debugging, automated testing, and documentation during development.
+  Product documentation: https://developers.openai.com/codex
+  Codex is development tooling, not a Nightingale runtime dependency, and is
+  not called by the application to process patient records.
